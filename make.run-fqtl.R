@@ -2,9 +2,12 @@
 
 argv <- commandArgs(trailingOnly = TRUE)
 
-in.dir <- argv[1] # e.g., '/broad/hptmp/ypp/ukbb/tempdata/2/134/'
-plink.hdr <- argv[2] # e.g., '1KG/plink/chr2'
-out.hdr <- argv[3] # e.g., 'output'
+if(length(argv) < 4) q()
+
+in.dir <- argv[1]               # e.g., in.dir = '/broad/hptmp/ypp/ukbb/tempdata/2/134/'
+plink.hdr <- argv[2]            # e.g., plink.hdr = '1KG/plink/chr2'
+N.TRAITS <- as.integer(argv[3]) # e.g., N.TRAITS = 45
+out.hdr <- argv[4]              # e.g., out.hdr = 'output'
 
 options(stringsAsFactors = FALSE)
 source('util.R')
@@ -27,6 +30,12 @@ library(tidyr)
 library(zqtl)
 
 stat.files <- list.files(path = in.dir, pattern = '.stat.gz', full.names = TRUE)
+
+if(length(stat.files) < N.TRAITS) {
+    log.msg('Fewer number of stat files: %d < %d\n\n',
+            length(stat.files), N.TRAITS)
+    q()
+}
 
 read.stat <- function(stat.file) {
     trait <- basename(stat.file) %>%
@@ -52,7 +61,21 @@ stat.tab <- do.call(rbind, lapply(stat.files, read.stat)) %>%
             mutate(Beta = ifelse(A1 == plink.A1, -Beta, Beta)) %>%
                 as.data.frame()
 
+nsnps.traits <- stat.tab %>% select(trait, POS) %>% unique() %>%
+    group_by(trait) %>% summarize(n = n())
+
+## check if there were different number of SNPs
+max.nsnps <- max(nsnps.traits$n)
+discrepancy <- nsnps.traits %>% filter(n < max.nsnps)
 traits <- stat.tab$trait %>% unique() %>% sort()
+
+if(discrepancy %>% nrow() > 0 || length(traits) < N.TRAITS) {
+    library(pander)
+    log.msg('Some traits might have preprocessing errors:\n%s\n%s\n\n',
+            pandoc.table.return(nsnps.traits, style = 'simple'),
+            paste(stat.files, collapse = '\n'))
+    q()
+}
 
 ## take beta and se mat
 chr <- stat.tab$CHR[1]

@@ -36,3 +36,8 @@ jobs/step2/%-jobs:
 	@[ -d $(dir $@) ] || mkdir -p $(dir $@)
 	@echo "./make.data-ldblock.R UKBB/$*.sumstats.gz $(LD) $(TEMPDIR)" > $@
 
+################################################################
+# 
+
+# % = $(chr)/$(ld)
+jobs/step3/%-jobs:
