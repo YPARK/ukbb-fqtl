@@ -33,9 +33,8 @@ for(rr in 1:nrow(ld.tab)) {
 
     if(!file.exists(out.file)) {
         .temp <- stat.tab %>%
-            filter(CHR == chr, POS >= ss, POS < ee, EAF > .05) %>%
-                select(-INFO, -N) %>%
-                    mutate(EAF = signif(EAF,2), P = signif(P, 2))
+            filter(CHR == chr, POS >= ss, POS < ee, EAF >= .05, INFO >= .9) %>%
+                mutate(EAF = signif(EAF,2), P = signif(P, 2))
         
         write_tsv(.temp, path = gzfile(out.file))
         rm(.temp)

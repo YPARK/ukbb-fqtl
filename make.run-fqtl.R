@@ -66,7 +66,7 @@ nsnps.traits <- stat.tab %>% select(trait, POS) %>% unique() %>%
 
 ## check if there were different number of SNPs
 max.nsnps <- max(nsnps.traits$n)
-discrepancy <- nsnps.traits %>% filter(n < max.nsnps)
+discrepancy <- nsnps.traits %>% filter(n < (max.nsnps -100))
 traits <- stat.tab$trait %>% unique() %>% sort()
 
 if(discrepancy %>% nrow() > 0 || length(traits) < N.TRAITS) {
@@ -89,7 +89,7 @@ se.tab <- stat.tab %>% select(CHR, SNP, POS, A1, A2, REF, plink.pos, se, trait) 
         as.data.frame()
 
 zscore.tab <- stat.tab %>% select(CHR, SNP, POS, A1, A2, REF, plink.pos, Beta, se, trait) %>%
-    mutate(z = Beta / se) %>% select(-Beta, -se) %>%
+    mutate(z = signif(Beta / se, 2)) %>% select(-Beta, -se) %>%
         spread(key = trait, value = z) %>% arrange(POS, A1) %>% na.omit() %>%
             as.data.frame()
 
@@ -121,10 +121,10 @@ zscore.tab <- plink.snps %>% select(CHR, SNP, POS) %>% left_join(zscore.tab) %>%
 log.msg('Constructed data\n\n')
 
 ################################################################
-K <- length(traits)
-vb.opt <- list(tau.lb = -10, tau.ub = -4, pi.lb = -4, pi.ub = -0, do.hyper = TRUE,
+K <- length(traits) - 1
+vb.opt <- list(tau.lb = -10, tau.ub = -4, pi.lb = -4, pi.ub = -2, do.hyper = TRUE,
                do.stdize = TRUE, eigen.tol = 1e-2, weight.y = FALSE, gammax = 1e4,
-               svd.init = TRUE, jitter = 0.1, vbiter = 5000, tol = 1e-8, decay = -1e-2, rate = 1e-2,
+               svd.init = TRUE, jitter = 0.1, vbiter = 5000, tol = 1e-8, rate = 1e-2,
                k = K)
 
 z.out <- fit.zqtl(effect = beta.mat, effect.se = se.mat,
