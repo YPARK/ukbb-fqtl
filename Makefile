@@ -1,4 +1,3 @@
-
 all:
 
 ################################################################
@@ -15,15 +14,18 @@ ldblocks: ac125e47bf7f.zip
 ac125e47bf7f.zip:
 	wget https://bitbucket.org/nygcresearch/ldetect-data/get/ac125e47bf7f.zip
 
+
+
 ################################################################
 # break down LD block by LD block
 PHENOTYPES := $(shell ls -1 UKBB/*.sumstats.gz | xargs -I file basename file .sumstats.gz)
-TEMPDIR := /broad/hptmp/ypp/ukbb/tempdata
 LD := ldblocks/EUR/fourier_ls-all.bed
 NBLOCKS := $(shell cat $(LD) 2> /dev/null | tail -n+2 | wc -l)
 ldlist := $(shell seq 1 $(NBLOCKS))
+TEMPDIR := /broad/hptmp/ypp/ukbb/tempdata
+CHR := $(shell seq 1 22)
 
-step2: jobs/step2.txt.gz
+step2: jobs/step2.txt.gz $(foreach chr, $(CHR), $(TEMPDIR)/$(chr)/) 
 
 jobs/step2.txt.gz: $(foreach pheno, $(PHENOTYPES), jobs/step2/$(pheno)-jobs)
 	@[ -d $(dir $@) ] || mkdir -p $(dir $@)
@@ -38,12 +40,9 @@ jobs/step2/%-jobs:
 
 ################################################################
 # run FQTL independently
-CHR := $(shell seq 1 22)
-STEP3-JOBS := $(foreach chr, $(CHR), $(shell ls -1 $(TEMPDIR)/$(chr)/ | sed 's/\///' 2> /dev/null | awk '{ print "jobs/step3/$(chr)/" $$1 "-jobs" }'))
-
 step3: jobs/step3.txt.gz
 
-jobs/step3.txt.gz: $(STEP3-JOBS)
+jobs/step3.txt.gz: $(foreach chr, $(CHR), $(shell [ -d $(TEMPDIR)/$(chr)/ ] && ls -1 $(TEMPDIR)/$(chr)/ | sed 's/\///' 2> /dev/null | awk '{ print "jobs/step3/$(chr)/" $$1 "-jobs" }'))
 	@[ -d $(dir $@) ] || mkdir -p $(dir $@)
 	@mkdir -p log/
 	@cat $^ | gzip > $@
@@ -56,4 +55,8 @@ jobs/step3-resubmit.txt.gz:
 # % = $(chr)/$(ld)
 jobs/step3/%-jobs:
 	@[ -d $(dir $@) ] || mkdir -p $(dir $@)
-	@echo ./make.run-fqtl.R $(TEMPDIR)/$* 1KG/plink/chr$(shell echo $* | awk -F'/' '{ print $$1 }') 45 result/fqtl/$*/fqtl > $@
+	@printf "" > $@
+	@[ -f result/fqtl/$*/fqtl.zscore.gz ] || echo ./make.run-fqtl.R $(TEMPDIR)/$* 1KG/plink/chr$(shell echo $* | awk -F'/' '{ print $$1 }') 45 result/fqtl/$*/fqtl > $@
+
+$(TEMPDIR)/%/:
+	[ -d $@ ] || mkdir -p $@

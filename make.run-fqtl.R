@@ -4,8 +4,8 @@ argv <- commandArgs(trailingOnly = TRUE)
 
 if(length(argv) < 4) q()
 
-in.dir <- argv[1]               # e.g., in.dir = '/broad/hptmp/ypp/ukbb/tempdata/2/134/'
-plink.hdr <- argv[2]            # e.g., plink.hdr = '1KG/plink/chr2'
+in.dir <- argv[1]               # e.g., in.dir = '/broad/hptmp/ypp/ukbb/tempdata/1/90/'
+plink.hdr <- argv[2]            # e.g., plink.hdr = '1KG/plink/chr1'
 N.TRAITS <- as.integer(argv[3]) # e.g., N.TRAITS = 45
 out.hdr <- argv[4]              # e.g., out.hdr = 'output'
 
@@ -16,8 +16,9 @@ dir.create(dirname(out.hdr), recursive = TRUE, showWarnings = FALSE)
 snp.factor.file <- out.hdr %&&% '.snp-factor.gz'
 trait.factor.file <- out.hdr %&&% '.trait-factor.gz'
 zscore.file <- out.hdr %&&% '.zscore.gz'
+var.file <- out.hdr %&&% '.var.gz'
 
-.files <- c(snp.factor.file, trait.factor.file, zscore.file)
+.files <- c(snp.factor.file, trait.factor.file, zscore.file, var.file)
 
 if(all(sapply(.files, file.exists))) {
     log.msg('Files exists:\n%s\n', paste(.files, collapse = '\n'))
@@ -28,6 +29,10 @@ library(readr)
 library(dplyr)
 library(tidyr)
 library(zqtl)
+
+## Take European ancestry
+ref.sample.info <- read_tsv('20130606_g1k.ped') %>%
+    filter(Population %in% c('CEU', 'TSI', 'FIN', 'GBR', 'IBS'))
 
 stat.files <- list.files(path = in.dir, pattern = '.stat.gz', full.names = TRUE)
 
@@ -93,12 +98,27 @@ zscore.tab <- stat.tab %>% select(CHR, SNP, POS, A1, A2, REF, plink.pos, Beta, s
         spread(key = trait, value = z) %>% arrange(POS, A1) %>% na.omit() %>%
             as.data.frame()
 
+if(nrow(beta.tab) < 2) {
+    log.msg('Too few number of SNPs\n\n')
+    write_tsv(data.frame(NULL), path = gzfile(var.file))
+    write_tsv(data.frame(NULL), path = gzfile(snp.factor.file))
+    write_tsv(data.frame(NULL), path = gzfile(trait.factor.file))
+    write_tsv(data.frame(NULL), path = gzfile(zscore.file))
+    q()
+}
+
 rm(stat.tab)
 gc()
 
-X <- plink$BED %c% beta.tab$plink.pos
+colnames(plink$FAM) <- c('Individual ID', 'Family ID', '1', '2', '3', '4')
+
+fam <- plink$FAM %>% mutate(fam.pos = 1:n()) %>%
+    left_join(ref.sample.info, by = 'Individual ID') %>%
+    na.omit()
+
+X <- plink$BED %c% beta.tab$plink.pos %r% fam$fam.pos
+
 plink.snps <- plink.snps %r% beta.tab$plink.pos
-FAM <- plink$FAM
 rm(plink)
 gc()
 
@@ -121,16 +141,42 @@ zscore.tab <- plink.snps %>% select(CHR, SNP, POS) %>% left_join(zscore.tab) %>%
 log.msg('Constructed data\n\n')
 
 ################################################################
-K <- length(traits) - 1
+K <- max(min(length(traits), ncol(X)), 1)
+
 vb.opt <- list(tau.lb = -10, tau.ub = -4, pi.lb = -4, pi.ub = -2, do.hyper = TRUE,
                do.stdize = TRUE, eigen.tol = 1e-2, weight.y = FALSE, gammax = 1e4,
-               svd.init = TRUE, jitter = 0.1, vbiter = 5000, tol = 1e-8, rate = 1e-2,
+               svd.init = TRUE, jitter = 0.01, vbiter = 5000, tol = 1e-8, rate = 1e-2,
                k = K)
 
 z.out <- fit.zqtl(effect = beta.mat, effect.se = se.mat,
                   X = X, factored = TRUE, options = vb.opt)
 
 log.msg('Finished fQTL estimation\n\n')
+
+## Variance of each factor
+theta.snp <- z.out$param.left$theta
+theta.trait <- z.out$param.right$theta
+
+take.var.k <- function(k) {
+
+    theta.k <- (theta.snp %c% k) %*% t(theta.trait %c% k)
+    theta.k <- theta.k * se.mat ## scale by SE
+    eta.k <- sweep(z.out$Vt %*% theta.k, 1, sqrt(z.out$D2), `*`)
+    var.k <- apply(eta.k^2, 2, sum)
+
+    return(data.frame(trait = as.character(names(var.k)), factor = k, var = var.k))
+}
+
+theta.tot <- (theta.snp %*% t(theta.trait)) * se.mat ## scale by SE
+eta.tot <- sweep(z.out$Vt %*% theta.tot, 1, sqrt(z.out$D2), `*`)
+var.tot <- data.frame(trait = as.character(traits), factor = 'total', var = apply(eta.tot^2, 2, sum)) 
+
+var.tab <- do.call(rbind, lapply(1:K, take.var.k))
+rownames(var.tab) <- NULL
+var.tab <- rbind(var.tab, var.tot) %>%
+    mutate(var = signif(var, 4))
+
+log.msg('Calculated Variance\n\n')
 
 LD.info <- plink.snps %>% summarize(CHR = min(CHR), LB = min(POS), UB = max(POS))
 
@@ -148,8 +194,13 @@ left.tab <- melt.effect(z.out$param.left, zscore.tab$SNP, 1:K) %>%
                 left_join(zscore.tab %>% select(SNP, POS, A1, A2, REF)) %>%
                     as.data.frame()
 
-left.tab <- data.frame(LD.info, left.tab)
+if(nrow(left.tab) > 0){
+    left.tab <- data.frame(LD.info, left.tab)
+} else {
+    left.tab <- data.frame(NULL)
+}
 
+write_tsv(var.tab, path = gzfile(var.file))
 write_tsv(left.tab, path = gzfile(snp.factor.file))
 write_tsv(right.tab, path = gzfile(trait.factor.file))
 write_tsv(zscore.tab, path = gzfile(zscore.file))
