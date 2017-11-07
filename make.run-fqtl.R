@@ -71,7 +71,7 @@ nsnps.traits <- stat.tab %>% select(trait, POS) %>% unique() %>%
 
 ## check if there were different number of SNPs
 max.nsnps <- max(nsnps.traits$n)
-discrepancy <- nsnps.traits %>% filter(n < (max.nsnps -100))
+discrepancy <- nsnps.traits %>% filter(n < (max.nsnps/2))
 traits <- stat.tab$trait %>% unique() %>% sort()
 
 if(discrepancy %>% nrow() > 0 || length(traits) < N.TRAITS) {
@@ -153,6 +153,8 @@ z.out <- fit.zqtl(effect = beta.mat, effect.se = se.mat,
 
 log.msg('Finished fQTL estimation\n\n')
 
+LD.info <- plink.snps %>% summarize(CHR = min(CHR), LB = min(POS), UB = max(POS))
+
 ## Variance of each factor
 theta.snp <- z.out$param.left$theta
 theta.trait <- z.out$param.right$theta
@@ -176,9 +178,9 @@ rownames(var.tab) <- NULL
 var.tab <- rbind(var.tab, var.tot) %>%
     mutate(var = signif(var, 4))
 
-log.msg('Calculated Variance\n\n')
+var.tab <- data.frame(LD.info, var.tab)
 
-LD.info <- plink.snps %>% summarize(CHR = min(CHR), LB = min(POS), UB = max(POS))
+log.msg('Calculated Variance\n\n')
 
 right.tab <- melt.effect(z.out$param.right, traits, 1:K) %>%
     rename(theta.se = theta.var, trait = row, factor = col) %>%

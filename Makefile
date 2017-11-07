@@ -41,6 +41,7 @@ jobs/step2/%-jobs:
 ################################################################
 # run FQTL independently
 step3: jobs/step3.txt.gz
+step3-resubmit: jobs/step3-resubmit.txt.gz
 
 jobs/step3.txt.gz: $(foreach chr, $(CHR), $(shell [ -d $(TEMPDIR)/$(chr)/ ] && ls -1 $(TEMPDIR)/$(chr)/ | sed 's/\///' 2> /dev/null | awk '{ print "jobs/step3/$(chr)/" $$1 "-jobs" }'))
 	@[ -d $(dir $@) ] || mkdir -p $(dir $@)
@@ -49,8 +50,8 @@ jobs/step3.txt.gz: $(foreach chr, $(CHR), $(shell [ -d $(TEMPDIR)/$(chr)/ ] && l
 	qsub -P compbio_lab -o log/step3.log -binding "linear:1" -cwd -V -l h_vmem=16g -l h_rt=14400 -b y -j y -N UKBB_RUN -t 1-$$(zcat $@ | wc -l) ./run_rscript.sh $@
 
 jobs/step3-resubmit.txt.gz:
-	@zcat jobs/step3.txt.gz | awk 'system("[ ! -f " $$NF ".zscore.gz ]") = 0' | gzip > $@
-	[ $$(zcat $@ | wc -l) -gt 0 ] && qsub -P compbio_lab -o log/step3.log -binding "linear:1" -cwd -V -l h_vmem=16g -l h_rt=86400 -b y -j y -N UKBB_RE_RUN -t 1-$$(zcat $@ | wc -l) ./run_rscript.sh $@
+	@zcat jobs/step3.txt.gz | awk 'system("[ ! -f " $$NF ".zscore.gz ]") == 0' | gzip > $@
+	[ $$(zcat $@ | wc -l) -gt 0 ] && qsub -P compbio_lab -o log/step3.log -binding "linear:1" -cwd -V -l h_vmem=32g -l h_rt=28800 -b y -j y -N UKBB_RE_RUN -t 1-$$(zcat $@ | wc -l) ./run_rscript.sh $@
 
 # % = $(chr)/$(ld)
 jobs/step3/%-jobs:
