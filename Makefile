@@ -61,3 +61,13 @@ jobs/step3/%-jobs:
 
 $(TEMPDIR)/%/:
 	[ -d $@ ] || mkdir -p $@
+
+################################################################
+# Clustering trait factors
+result/ukbb-fqtl-traits-slim.txt.gz:
+	Rscript run.clustering.R
+
+result/ukbb-fqtl-snps-slim.txt.gz: result/ukbb-fqtl-traits-slim.txt.gz
+result/fig_trait_correlation.pdf: result/ukbb-fqtl-traits-slim.txt.gz
+result/fig_trait_clusters.pdf: result/ukbb-fqtl-traits-slim.txt.gz
+
