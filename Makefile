@@ -63,6 +63,13 @@ $(TEMPDIR)/%/:
 	[ -d $@ ] || mkdir -p $@
 
 ################################################################
+# parametric bootstrap FQTL effect sizes
+
+
+
+
+
+################################################################
 # Clustering trait factors
 result/ukbb-fqtl-traits-slim.txt.gz:
 	Rscript run.clustering.R
