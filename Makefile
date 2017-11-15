@@ -63,8 +63,20 @@ $(TEMPDIR)/%/:
 	[ -d $@ ] || mkdir -p $@
 
 ################################################################
-# parametric bootstrap FQTL effect sizes
+# null distribution of FQTL effect sizes
+step4: jobs/step4.txt.gz
 
+jobs/step4.txt.gz: $(foreach chr, $(CHR), $(shell [ -d $(TEMPDIR)/$(chr)/ ] && ls -1 $(TEMPDIR)/$(chr)/ | sed 's/\///' 2> /dev/null | awk '{ print "jobs/step4/$(chr)/" $$1 "-jobs" }'))
+	@[ -d $(dir $@) ] || mkdir -p $(dir $@)
+	@mkdir -p log/
+	@cat $^ | gzip > $@
+	qsub -P compbio_lab -o log/step4.log -binding "linear:1" -cwd -V -l h_vmem=16g -l h_rt=14400 -b y -j y -N UKBB_NULL -t 1-$$(zcat $@ | wc -l) ./run_rscript.sh $@
+
+# % = $(chr)/$(ld)
+jobs/step4/%-jobs:
+	@[ -d $(dir $@) ] || mkdir -p $(dir $@)
+	@printf "" > $@
+	@[ -f result/null/$*/null.var.gz ] || echo ./make.run-fqtl.R $(TEMPDIR)/$* 1KG/plink/chr$(shell echo $* | awk -F'/' '{ print $$1 }') 45 result/null/$*/null > $@
 
 
 
