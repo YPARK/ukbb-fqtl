@@ -76,7 +76,7 @@ jobs/step4.txt.gz: $(foreach chr, $(CHR), $(shell [ -d $(TEMPDIR)/$(chr)/ ] && l
 jobs/step4/%-jobs:
 	@[ -d $(dir $@) ] || mkdir -p $(dir $@)
 	@printf "" > $@
-	@[ -f result/null/$*/null.var.gz ] || echo ./make.run-fqtl.R $(TEMPDIR)/$* 1KG/plink/chr$(shell echo $* | awk -F'/' '{ print $$1 }') 45 result/null/$*/null > $@
+	@[ -f result/null/$*/null.var.gz ] || echo ./make.null-fqtl.R $(TEMPDIR)/$* 1KG/plink/chr$(shell echo $* | awk -F'/' '{ print $$1 }') 45 result/null/$*/null > $@
 
 
 
