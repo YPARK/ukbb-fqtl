@@ -1,6 +1,5 @@
 #!/usr/bin/env Rscript
-
-## Identify clusters of
+## Identify clusters of tissue patterns
 
 library(readr)
 library(dplyr)
@@ -13,8 +12,19 @@ trait.tab <- read_tsv('result/ukbb-fqtl-traits.txt.gz')
 snp.tab <- read_tsv('result/ukbb-fqtl-snps.txt.gz')
 trait.out.file <- 'result/ukbb-fqtl-traits-slim.txt.gz'
 snp.out.file <- 'result/ukbb-fqtl-snps-slim.txt.gz'
+centroid.out.file <- 'result/ukbb-centroid-slim.txt.gz'
+pair.out.file <- 'result/ukbb-trait-pairs.txt.gz'
 
-data.tab <- trait.tab %>% select(CHR, LB, UB, trait, factor, lodds) %>%
+lodds.cutoff <- 2
+## only include factors, which contains at least one lodds >= 2
+data.idx <- 
+    trait.tab %>% filter(lodds >= lodds.cutoff) %>%
+    select(CHR, LB, UB, trait, factor) %>%
+    unique()
+
+data.tab <- trait.tab %>% full_join(data.idx) %>%
+    na.omit() %>% 
+    select(CHR, LB, UB, trait, factor, lodds) %>%
     mutate(lodds = pmin(pmax(lodds, -3), 3)) %>%
     spread(key = trait, value = lodds)
 
@@ -67,6 +77,8 @@ pair.stat.tab <- do.call(rbind, lapply(1:ncol(trait.pairs), .func.j))
 pair.stat <- rbind(data.frame(t1 = pair.stat.tab$t1, t2 = pair.stat.tab$t2, p.yx=pair.stat.tab$p2.1),
                    data.frame(t1 = pair.stat.tab$t2, t2 = pair.stat.tab$t1, p.yx=pair.stat.tab$p1.2))
 
+write_tsv(pair.stat, path = gzfile(pair.out.file))
+
 ################################################################
 ## output trait clusters with membership assigned
 
@@ -98,10 +110,12 @@ write_tsv(snp.tab.slim, path = gzfile(snp.out.file))
     group_by(k.sorted) %>% summarize(num.snps = n())
 
 .factors <- trait.tab.slim %>% select(CHR, LB, UB, factor, k.sorted) %>%
+    mutate(sz = UB - LB) %>%
     unique() %>% group_by(k.sorted) %>%
-    summarize(num.factors = n())
+    summarize(num.factors = n(), size = sum(sz))
 
 clust.stat <- left_join(.snps, .factors) %>% rename(cluster = k.sorted)
+
 
 ## trait-specific stats
 .snps <- snp.tab.slim %>% select(CHR, LB, UB, factor, SNP) %>%
@@ -130,10 +144,12 @@ centroid.tab <- cbind(cluster = 1:K, clust.out$centroid) %>% as.data.frame() %>%
 centroid.tab$trait <- factor(centroid.tab$trait, traits.ordered)
 centroid.tab$cluster <- factor(centroid.tab$cluster, ko, 1:K)
 
+write_tsv(centroid.tab, path = gzfile(centroid.out.file))
+
 plt <-
     gg.plot(centroid.tab, aes(x = cluster, y = trait, fill = pip)) +
     geom_tile(color = 'gray') + xlab('pleiotropic genomic regions') + ylab('UKBB 45 traits') +
-    scale_fill_gradientn('PIP', colors = c('#6666FF', '#8888FF', 'yellow', 'yellow'),
+    scale_fill_gradientn('PIP', colors = c('#FFFFFF', '#FF0000'),
                          breaks = c(0, .05, .25, .5, .75, .95, 1))
 
 plt <- plt +
@@ -147,10 +163,21 @@ p.0 <- gg.plot() + geom_blank() + theme_void()
 
 clust.stat$cluster <- factor(clust.stat$cluster, 1:K)
 
-p.1 <-
+p.1a <- 
+    gg.plot(clust.stat)+
+    geom_segment(aes(x = cluster, xend = cluster, y = 0, yend = num.factors), size = 2, color = 'gray')+
+    geom_text(aes(x = cluster, y = num.factors + 0.1, label = num.factors), angle = 90, vjust = .5, hjust = 0, size = 3)+
+    ylab('# LD blocks') + theme(axis.text.x = element_blank(), axis.title.x = element_blank())
+
+p.1b <- 
+    gg.plot(clust.stat)+
+    geom_segment(aes(x = cluster, xend = cluster, y = 0, yend = size), size = 2, color = 'gray')+
+    ylab('# total SNPs') + theme(axis.text.x = element_blank(), axis.title.x = element_blank())
+
+p.1c <-
     gg.plot(clust.stat)+
     geom_segment(aes(x = cluster, xend = cluster, y = 0, yend = num.snps), size = 2, color = 'gray')+
-    geom_text(aes(x = cluster, y = pmax(num.snps + 10, 500), label = num.snps), angle = 90, vjust = .5, hjust = 1, size = 3)+
+    geom_text(aes(x = cluster, y = num.snps + 10, label = num.snps), angle = 90, vjust = .5, hjust = 0, size = 3)+
     ylab('# SNPs') + theme(axis.text.x = element_blank(), axis.title.x = element_blank())
 
 p.2 <-
@@ -159,39 +186,49 @@ p.2 <-
     geom_text(aes(x = pmax(num.snps, 500), label = num.snps), size = 3, hjust = 1) +
     xlab('# SNPs') + theme(axis.text.y = element_blank(), axis.title.y = element_blank())
 
-g.temp <- match.widths(list(p.1, plt))
-g.top <- match.heights.grob(c(g.temp[1], list(ggplotGrob(p.0))))
-g.bottom <- match.heights.grob(c(g.temp[2], list(ggplotGrob(p.2))))
+g.temp <- match.widths(list(p.1a, p.1b, p.1c, plt))
 
-gg <- grid.arrange(grobs = c(g.top, g.bottom), nrow = 2, newpage = TRUE,
-             widths = c(9, 1), heights = c(1.5, 8.5))
+## g.top <- match.heights.grob(c(g.temp[1], list(ggplotGrob(p.0))))
+
+g.bottom <- match.heights.grob(c(g.temp[4], list(ggplotGrob(p.2))))
+
+g.top <- c(g.temp[1], list(ggplotGrob(p.0)),
+           g.temp[2], list(ggplotGrob(p.0)),
+           g.temp[3], list(ggplotGrob(p.0)))
+
+gg <-
+    grid.arrange(grobs = c(g.top, g.bottom), ncol = 2, newpage = TRUE,
+             widths = c(9, 1), heights = c(2, 2, 2, 10))
 
 ggsave(filename = 'result/fig_trait_clusters.pdf',
        plot = gg,
        width = K * .1 + 5,
-       height = 2 + length(traits.ordered) * .1,
+       height = 6 + length(traits.ordered) * .1,
        limitsize = FALSE,
        units = 'in')
 
 
-
 ################################################################
 ## Draw trait-trait sharing -- bidirectional posterior probability matrix
-pair.df <- pair.stat
 
+pair.df <- rbind(data.frame(t1 = traits, t2 = traits, p.yx = 1),
+                 pair.stat)
 pair.df$t1 <- factor(pair.df$t1, rev(traits.ordered))
 pair.df$t2 <- factor(pair.df$t2, traits.ordered)
 
 plt2 <-
-    gg.plot(pair.df) +
-    geom_tile(aes(x = t1, y = t2, fill = p.yx), color = 'black') +
+    gg.plot(pair.df, aes(x = t1, y = t2, fill = p.yx)) +
+    geom_tile(color = 'black') +
+    geom_text(data = pair.df %>% filter(t1 != t2, p.yx >= .2), aes(label = floor(10*p.yx)),
+              size = 3) + 
     scale_x_discrete(position = 'top') +
-    scale_fill_gradientn('P(row|col)', colors = c('white', 'gray80', 'yellow', 'orange', 'red'),
-                        breaks = c(0.1, 0.25, 0.5, 0.75, 0.9, 1)) +
+    scale_fill_gradientn('P(row|col)', colors = c('white', 'white', 'orange', 'red'),
+                         breaks = c(0.1, 0.25, 0.5, 0.8, 1),
+                         trans = 'sqrt') +
     theme(axis.text.x.top = element_text(angle=60, vjust = 0, hjust=0),
           axis.title = element_blank())
           
-ggsave(filename = 'result/fig_trait_correlation.pdf',
+ggsave(filename = 'result/fig_trait_conditional.pdf',
        plot = plt2,
        width = 4 + length(traits.ordered) * .15,
        height = 3 + length(traits.ordered) * .15,
