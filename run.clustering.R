@@ -48,10 +48,15 @@ clust.out <- KMeans_rcpp(M, clusters = K, num_init = 50, max_iters = 200,
 ################################################################
 ## reorder centroids
 C <- clust.out$centroid
-ko <- row.order(C > 0)    # cluster order
-to <- row.order(t(C) > 0) # trait order
+ko <- row.order(C > 0)         # cluster order
+to <- order(apply(C[ko, ] > 0, 2, function(x) median(which(x))), decreasing = TRUE)
+
 traits <- colnames(M)
 traits.ordered <- traits[to]
+
+## save trait order
+write_tsv(data.frame(trait = traits.ordered) %>% mutate(trait.order = 1:n()),
+          path = gzfile('result/ukbb-fqtl-traits-order.txt.gz'))
 
 ## pair statistics
 .take.t1.t2 <- function(t1, t2, .tab = data.tab, lodds.cutoff = 0) {
