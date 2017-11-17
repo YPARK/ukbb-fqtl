@@ -16,6 +16,8 @@ centroid.out.file <- 'result/ukbb-centroid-slim.txt.gz'
 pair.out.file <- 'result/ukbb-trait-pairs.txt.gz'
 
 lodds.cutoff <- 2
+theta.cutoff <- 4
+
 ## only include factors, which contains at least one lodds >= 2
 data.idx <- 
     trait.tab %>% filter(lodds >= lodds.cutoff) %>%
@@ -49,17 +51,20 @@ clust.out <- KMeans_rcpp(M, clusters = K, num_init = 50, max_iters = 200,
 ## reorder centroids
 C <- clust.out$centroid
 ko <- row.order(C > 0)         # cluster order
+to.2 <- row.order(t(C) > 0)    # trait order for pair-wise map
+
 to <- order(apply(C[ko, ] > 0, 2, function(x) median(which(x))), decreasing = TRUE)
 
 traits <- colnames(M)
 traits.ordered <- traits[to]
+traits.ordered.2 <- traits[to.2]
 
 ## save trait order
 write_tsv(data.frame(trait = traits.ordered) %>% mutate(trait.order = 1:n()),
           path = gzfile('result/ukbb-fqtl-traits-order.txt.gz'))
 
 ## pair statistics
-.take.t1.t2 <- function(t1, t2, .tab = data.tab, lodds.cutoff = 0) {
+.take.t1.t2 <- function(t1, t2, .tab = data.tab, lodds.cutoff = 2) {
     .temp <- .tab %>% select_(.dots = c(t1, t2))
     n1 <- sum(.temp[, 1] > lodds.cutoff)
     n2 <- sum(.temp[, 2] > lodds.cutoff)
@@ -72,10 +77,10 @@ write_tsv(data.frame(trait = traits.ordered) %>% mutate(trait.order = 1:n()),
 }
 
 .func.j <- function(j) {
-    .take.t1.t2(trait.pairs[1, j], trait.pairs[2, j], .tab = data.tab, lodds.cutoff = 0)
+    .take.t1.t2(trait.pairs[1, j], trait.pairs[2, j], .tab = data.tab, lodds.cutoff = 2)
 }
 
-trait.pairs <- combn(traits.ordered, 2)
+trait.pairs <- combn(traits.ordered.2, 2)
 
 pair.stat.tab <- do.call(rbind, lapply(1:ncol(trait.pairs), .func.j))
 
@@ -111,10 +116,14 @@ snp.tab.slim <- snp.tab %>%
 write_tsv(snp.tab.slim, path = gzfile(snp.out.file))
 
 ## cluster-specific stats
-.snps <- snp.tab.slim %>% select(SNP, k.sorted) %>% unique() %>%
+.snps <- snp.tab.slim %>%
+    filter(lodds > lodds.cutoff, abs(theta / theta.se) > theta.cutoff) %>%
+    select(SNP, k.sorted) %>% unique() %>%
     group_by(k.sorted) %>% summarize(num.snps = n())
 
-.factors <- trait.tab.slim %>% select(CHR, LB, UB, factor, k.sorted) %>%
+.factors <- trait.tab.slim %>%
+    filter(lodds > lodds.cutoff) %>%
+    select(CHR, LB, UB, factor, k.sorted) %>%
     mutate(sz = UB - LB) %>%
     unique() %>% group_by(k.sorted) %>%
     summarize(num.factors = n(), size = sum(sz))
@@ -123,13 +132,17 @@ clust.stat <- left_join(.snps, .factors) %>% rename(cluster = k.sorted)
 
 
 ## trait-specific stats
-.snps <- snp.tab.slim %>% select(CHR, LB, UB, factor, SNP) %>%
+.snps <- snp.tab.slim %>%
+    filter(lodds > lodds.cutoff, abs(theta / theta.se) > theta.cutoff) %>%
+    select(CHR, LB, UB, factor, SNP) %>%
     left_join(trait.tab.slim %>% select(CHR, LB, UB, factor, trait)) %>%
     select(trait, SNP) %>% unique() %>%
     group_by(trait) %>%
     summarize(num.snps = n())
 
-.factors <- snp.tab.slim %>% select(CHR, LB, UB, factor, SNP) %>%
+.factors <- snp.tab.slim %>%
+    filter(lodds > lodds.cutoff) %>%
+    select(CHR, LB, UB, factor, SNP) %>%
     left_join(trait.tab.slim %>% select(CHR, LB, UB, factor, trait)) %>%
     select(CHR, LB, UB, trait) %>% unique() %>%
     group_by(trait) %>%
@@ -218,12 +231,12 @@ ggsave(filename = 'result/fig_trait_clusters.pdf',
 
 pair.df <- rbind(data.frame(t1 = traits, t2 = traits, p.yx = 1),
                  pair.stat)
-pair.df$t1 <- factor(pair.df$t1, rev(traits.ordered))
-pair.df$t2 <- factor(pair.df$t2, traits.ordered)
+pair.df$t1 <- factor(pair.df$t1, rev(traits.ordered.2))
+pair.df$t2 <- factor(pair.df$t2, traits.ordered.2)
 
 plt2 <-
     gg.plot(pair.df, aes(x = t1, y = t2, fill = p.yx)) +
-    geom_tile(color = 'black') +
+    geom_tile(color = 'gray') +
     geom_text(data = pair.df %>% filter(t1 != t2, p.yx >= .2), aes(label = floor(10*p.yx)),
               size = 3) + 
     scale_x_discrete(position = 'top') +
