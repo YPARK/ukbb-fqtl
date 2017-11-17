@@ -88,10 +88,10 @@ jobs/step4/%-jobs:
 	@[ -f result/null/$*/null.var.gz ] || echo ./make.null-fqtl.R $(TEMPDIR)/$* 1KG/plink/chr$(shell echo $* | awk -F'/' '{ print $$1 }') 45 result/null/$*/null >> $@
 	@[ -f result/null-kron/$*/null-kron.var.gz ] || echo ./make.null-kron-fqtl.R $(TEMPDIR)/$* 1KG/plink/chr$(shell echo $* | awk -F'/' '{ print $$1 }') 45 result/null-kron/$*/null-kron >> $@
 
-
-
 ################################################################
 # Clustering trait factors
+step5: result/ukbb-fqtl-traits-slim.txt.gz
+
 result/ukbb-fqtl-traits-slim.txt.gz:
 	Rscript run.clustering.R
 
@@ -99,3 +99,18 @@ result/ukbb-fqtl-snps-slim.txt.gz: result/ukbb-fqtl-traits-slim.txt.gz
 result/fig_trait_correlation.pdf: result/ukbb-fqtl-traits-slim.txt.gz
 result/fig_trait_clusters.pdf: result/ukbb-fqtl-traits-slim.txt.gz
 
+################################################################
+# Draw local views
+step6: jobs/step6.txt.gz
+
+jobs/step6.txt.gz: $(foreach chr, $(CHR), $(shell [ -d result/fqtl/$(chr)/ ] && ls -1 result/fqtl/$(chr)/ | sed 's/\///' 2> /dev/null | awk '{ print "jobs/step6/$(chr)/" $$1 "-jobs" }'))
+	@[ -d $(dir $@) ] || mkdir -p $(dir $@)
+	@mkdir -p log/
+	@cat $^ | gzip > $@
+	qsub -P compbio_lab -o log/step6.log -binding "linear:1" -cwd -V -l h_vmem=4g -l h_rt=3600 -b y -j y -N UKBB_FIG -t 1-$$(zcat $@ | wc -l) ./run_rscript.sh $@
+
+# % = $(chr)/$(ld)
+jobs/step6/%-jobs:
+	@[ -d $(dir $@) ] || mkdir -p $(dir $@)
+	@printf "" > $@
+	@if [ -f result/fqtl/$*/fqtl.zscore.gz ];then echo ./make.local.views.R result/fqtl/$* result/local_views > $@; fi
