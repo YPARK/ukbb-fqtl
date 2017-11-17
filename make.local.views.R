@@ -16,7 +16,7 @@ snp.file <- in.dir %&&% '/fqtl.snp-factor.gz'
 zscore.file <- in.dir %&&% '/fqtl.zscore.gz'
 trait.file <- in.dir %&&% '/fqtl.trait-factor.gz'
 
-## visualize strong SNPs only 
+## visualize strong SNPs only
 snp.tab <- read_tsv(snp.file)
 if(nrow(snp.tab) < 1) q()
 zscore.tab <- read_tsv(zscore.file)
@@ -63,9 +63,11 @@ if(nrow(factors) < 1) {
 
 active.traits <- factors %>% select(-trait) %>%
     right_join(trait.tab) %>%
-    filter(lodds > 0)
+    filter(lodds > lodds.cutoff)
 
-viz.snps <- snp.tab %>% filter(lodds > lodds.cutoff) %>% select(SNP) %>% unique()
+viz.snps <- snp.tab %>%
+    filter(lodds > lodds.cutoff) %>%
+    select(SNP) %>% unique()
 
 ################################################################
 ## show factor by factor
@@ -124,19 +126,20 @@ for(k in 1:nrow(factors)) {
         p1 <- gg.plot(gwas.active, aes(x = POS, y = ln.p)) +
             geom_vline(data = snps, aes(xintercept = POS), color = 'green', lty = 'solid', size = .5) +
                 .gwas.x.scale.flip
+        p1 <- p1 +
+            geom_point(size = .8, color = 'gray20') +
+                geom_line(data = gwas.inactive.med, aes(x = POS, y = ln.p), color = 'orange')
 
         p1 <- p1 +
             geom_point(data = snps.active %>% filter(SNP %in% snps$SNP), aes(size = lodds),
-                       pch = 21, fill = 'white', color = 'red') +
-                           geom_line(data = gwas.inactive.med, aes(x = POS, y = ln.p), color = 'orange')
+                       pch = 21, color = 'red')
 
         p1 <- p1 +
-            geom_point(size = .8, color = 'gray20') +
-                facet_wrap(~trait, ncol = 1, scales='free', dir = 'v', strip.position = 'bottom') +
-                    scale_size_continuous(range = c(0, 2)) +
-                        xlab('genomic location (kb)') + ylab('GWAS (-log10 P)') +
-                            theme(legend.position = 'none',
-                                  axis.title.x = element_blank(), axis.text = element_text(size = 6))
+            facet_wrap(~trait, ncol = 1, scales='free', dir = 'v', strip.position = 'bottom') +
+                scale_size_continuous(range = c(0, 2)) +
+                    xlab('genomic location (kb)') + ylab('GWAS (-log10 P)') +
+                        theme(legend.position = 'none',
+                              axis.title.x = element_blank(), axis.text = element_text(size = 6))
 
         ## bridge
         p.12 <-
