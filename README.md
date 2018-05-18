@@ -1,1 +1,1 @@
-# ukbb-fqtl
+# UK Biobank factorization
